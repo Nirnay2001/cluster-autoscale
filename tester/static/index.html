@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Autoscale tester</title>
+<style>
+:root{--bg:#fafaf7;--card:#fff;--text:#1f1f1c;--muted:#6b6a64;--line:#dcdad2;--teal:#0F6E56;--coral:#C0502B;--amber:#B7791F;--tealbg:#E1F5EE;--coralbg:#FAECE7;--amberbg:#FAEEDA}
+@media(prefers-color-scheme:dark){:root{--bg:#1a1a18;--card:#242422;--text:#ecebe5;--muted:#a19f96;--line:#3a3a36;--teal:#5DCAA5;--coral:#F0997B;--amber:#EF9F27;--tealbg:#04342C;--coralbg:#4A1B0C;--amberbg:#412402}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,-apple-system,Segoe UI,sans-serif}
+.wrap{max-width:980px;margin:0 auto;padding:20px 16px 60px}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+h1{font-size:22px;font-weight:600;margin:0}
+h2{font-size:14px;font-weight:600;margin:0 0 10px;color:var(--muted);text-transform:none}
+.badge{padding:4px 12px;border-radius:99px;font-size:13px;background:var(--line);color:var(--muted)}
+.badge.on{background:var(--tealbg);color:var(--teal);font-weight:600}
+.grid{display:grid;gap:12px}
+.g3{grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:12px}
+.big{font-size:34px;font-weight:600;line-height:1.1}
+.sub{font-size:13px;color:var(--muted);margin-top:4px}
+.row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:8px 0}
+.row label{min-width:150px;font-size:14px}
+.row input[type=range]{flex:1;min-width:160px}
+.val{min-width:44px;text-align:right;font-weight:600}
+button,select{font:inherit;padding:7px 14px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--text);cursor:pointer}
+button:hover{border-color:var(--muted)}
+button.primary{background:var(--teal);border-color:var(--teal);color:var(--bg)}
+button.danger{color:var(--coral);border-color:var(--coral)}
+.presets{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
+canvas{width:100%;height:150px;display:block}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)}
+th{color:var(--muted);font-weight:500}
+.mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px}
+.pill{padding:2px 9px;border-radius:99px;font-size:12px}
+.pill.ok{background:var(--tealbg);color:var(--teal)}
+.pill.warn{background:var(--amberbg);color:var(--amber)}
+.err{display:none;background:var(--coralbg);color:var(--coral);border:1px solid var(--coral);border-radius:10px;padding:10px 14px;margin-bottom:12px;font-size:14px}
+ul{list-style:none;margin:0;padding:0}
+li{padding:5px 0;border-bottom:1px solid var(--line);font-size:14px}
+li .tm{color:var(--muted);margin-right:10px}
+li.up{color:var(--teal)} li.down{color:var(--coral)} li.load{color:var(--amber)}
+.hint{font-size:13px;color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1>Autoscale tester</h1>
+  <span id="badge" class="badge">Connecting...</span>
+</header>
+
+<div id="err" class="err"></div>
+
+<div class="grid g3" style="margin-bottom:12px">
+  <div class="panel" style="margin:0"><h2>Replicas (current)</h2><div class="big" id="cur">-</div><div class="sub" id="curSub">&nbsp;</div></div>
+  <div class="panel" style="margin:0"><h2>Average CPU vs target</h2><div class="big" id="cpu">-</div><div class="sub" id="cpuSub">&nbsp;</div></div>
+  <div class="panel" style="margin:0"><h2>Traffic</h2><div class="big"><span id="rps">0</span> <span style="font-size:16px;font-weight:400">req/s</span></div><div class="sub" id="rpsSub">&nbsp;</div></div>
+</div>
+
+<div class="panel">
+  <h2>Generate load (runs inside the cluster, through the Service)</h2>
+  <div class="row"><label for="users">Parallel users</label><input id="users" type="range" min="0" max="100" value="10"><span class="val" id="uv">10</span></div>
+  <div class="row"><label for="ms">CPU per request (ms)</label><input id="ms" type="range" min="10" max="1000" step="10" value="200"><span class="val" id="mv">200</span></div>
+  <div class="row"><label for="dur">Duration</label>
+    <select id="dur"><option value="0">Until I stop it</option><option value="2">2 minutes</option><option value="5">5 minutes</option><option value="10">10 minutes</option></select>
+    <button class="primary" id="go">Start / update load</button>
+    <button class="danger" id="stop">Stop</button>
+  </div>
+  <div class="presets">
+    <span class="hint" style="align-self:center">Presets:</span>
+    <button data-p="5,100">Light</button><button data-p="15,200">Medium</button><button data-p="40,300">Heavy</button><button data-p="80,400">Spike</button>
+  </div>
+  <div class="row" style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px">
+    <button id="scn">Run full autoscale test</button>
+    <span class="hint">Warm up 1 min, ramp up 1.5 min, peak 2 min, then cool down 3 min so you can watch scale-up and scale-down.</span>
+  </div>
+</div>
+
+<div class="grid g3">
+  <div class="panel" style="margin:0"><h2>Replicas (solid) and desired (dashed)</h2><canvas id="c1"></canvas></div>
+  <div class="panel" style="margin:0"><h2>CPU % (solid) and target (dashed)</h2><canvas id="c2"></canvas></div>
+  <div class="panel" style="margin:0"><h2>Parallel users</h2><canvas id="c3"></canvas></div>
+</div>
+
+<div class="panel" style="margin-top:12px">
+  <h2>Pods</h2>
+  <table><thead><tr><th>Name</th><th>Status</th><th>CPU</th><th>Share of recent traffic</th></tr></thead><tbody id="pods"></tbody></table>
+  <div class="hint" id="podsEmpty" style="margin-top:8px"></div>
+</div>
+
+<div class="panel">
+  <h2>Events</h2>
+  <ul id="events"></ul>
+</div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let data = null;
+
+async function api(path, body) {
+  const r = await fetch(path, {
+    method: body === undefined ? 'GET' : 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: body === undefined ? undefined : JSON.stringify(body)
+  });
+  return r.json();
+}
+const duration = () => +$('dur').value * 60;
+
+$('users').oninput = () => $('uv').textContent = $('users').value;
+$('ms').oninput = () => $('mv').textContent = $('ms').value;
+$('go').onclick = async () => { await api('/api/start', {users: +$('users').value, ms: +$('ms').value, duration: duration()}); refresh(); };
+$('stop').onclick = async () => { await api('/api/stop', {}); refresh(); };
+$('scn').onclick = async () => { await api('/api/scenario', {}); refresh(); };
+document.querySelectorAll('[data-p]').forEach(b => b.onclick = async () => {
+  const [u, m] = b.dataset.p.split(',').map(Number);
+  $('users').value = u; $('ms').value = m; $('uv').textContent = u; $('mv').textContent = m;
+  await api('/api/start', {users: u, ms: m, duration: duration()}); refresh();
+});
+
+function chart(id, series, o) {
+  const cv = $(id), dpr = window.devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
+  cv.width = w * dpr; cv.height = h * dpr;
+  const g = cv.getContext('2d'); g.scale(dpr, dpr); g.clearRect(0, 0, w, h);
+  const css = getComputedStyle(document.documentElement), col = n => css.getPropertyValue(n).trim();
+  const L = 34, R = 8, T = 8, B = 18, win = 600, tmin = o.tmax - win;
+  let max = o.minMax;
+  series.forEach(s => s.pts.forEach(p => { if (p.v != null && p.v > max) max = p.v; }));
+  max = Math.ceil(max * 1.15);
+  const X = t => L + (t - tmin) / win * (w - L - R), Y = v => T + (1 - v / max) * (h - T - B);
+  g.font = '11px system-ui'; g.fillStyle = col('--muted'); g.strokeStyle = col('--line'); g.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const v = max * i / 4, y = Y(v);
+    g.beginPath(); g.moveTo(L, y); g.lineTo(w - R, y); g.stroke();
+    g.textAlign = 'right'; g.fillText(Math.round(v), L - 5, y + 4);
+  }
+  g.textAlign = 'left'; g.fillText('-10 min', L, h - 4);
+  g.textAlign = 'right'; g.fillText('now', w - R, h - 4);
+  series.forEach(s => {
+    g.beginPath(); g.strokeStyle = col(s.color); g.lineWidth = 2; g.setLineDash(s.dash ? [5, 4] : []);
+    let prev = null, started = false;
+    s.pts.forEach(p => {
+      if (p.t < tmin || p.v == null) { started = false; prev = null; return; }
+      const x = X(p.t), y = Y(p.v);
+      if (!started) { g.moveTo(x, y); started = true; }
+      else { if (s.step) g.lineTo(x, Y(prev)); g.lineTo(x, y); }
+      prev = p.v;
+    });
+    g.stroke(); g.setLineDash([]);
+  });
+}
+
+function eventsFrom(h) {
+  const ev = [];
+  for (let i = 1; i < h.length; i++) {
+    const a = h[i - 1], b = h[i];
+    if (a.cur != null && b.cur != null && a.cur !== b.cur)
+      ev.push({t: b.t, k: b.cur > a.cur ? 'up' : 'down', m: `Replicas ${a.cur} \u2192 ${b.cur}` + (b.cpu != null ? ` (CPU ${b.cpu}%)` : '')});
+    if (a.users !== b.users) ev.push({t: b.t, k: 'load', m: `Load ${a.users} \u2192 ${b.users} users`});
+  }
+  return ev.slice(-14).reverse();
+}
+
+function render(d) {
+  data = d;
+  const L = d.load || {}, C = d.cluster, h = d.history || [];
+  const b = $('badge');
+  if (L.scenario) { b.textContent = `Test: ${L.scenario.stage} (${L.scenario.index + 1}/${L.scenario.total}), ${L.scenario.left}s left`; b.className = 'badge on'; }
+  else if (L.running) { b.textContent = `Load on: ${L.users} users` + (L.remaining ? `, ${L.remaining}s left` : ''); b.className = 'badge on'; }
+  else { b.textContent = 'Idle'; b.className = 'badge'; }
+
+  const e = $('err');
+  if (d.error) { e.style.display = 'block'; e.textContent = 'Cannot read cluster data: ' + d.error; } else e.style.display = 'none';
+
+  if (C) {
+    $('cur').textContent = C.current;
+    $('curSub').textContent = `desired ${C.desired}, ready ${C.ready}, range ${C.min}-${C.max}`;
+    $('cpu').textContent = C.cpu == null ? 'n/a' : C.cpu + '%';
+    $('cpuSub').textContent = `target ${C.target}%` + (C.cpu == null ? ' (metrics not ready)' : '');
+  } else { $('cur').textContent = '-'; $('cpu').textContent = '-'; $('curSub').innerHTML = '&nbsp;'; $('cpuSub').innerHTML = '&nbsp;'; }
+  $('rps').textContent = L.rps ?? 0;
+  $('rpsSub').textContent = `avg ${L.avg_ms ?? '-'} ms, p95 ${L.p95_ms ?? '-'} ms, errors ${L.errors ?? 0}`;
+
+  const tmax = h.length ? h[h.length - 1].t : Date.now() / 1000;
+  const pick = k => h.map(p => ({t: p.t, v: p[k]}));
+  chart('c1', [{pts: pick('des'), color: '--muted', step: true, dash: true}, {pts: pick('cur'), color: '--teal', step: true}], {tmax, minMax: 4});
+  const target = C && C.target != null ? C.target : null;
+  chart('c2', [{pts: h.map(p => ({t: p.t, v: target})), color: '--amber', dash: true}, {pts: pick('cpu'), color: '--coral'}], {tmax, minMax: 100});
+  chart('c3', [{pts: pick('users'), color: '--teal', step: true}], {tmax, minMax: 10});
+
+  const tb = $('pods'); tb.innerHTML = '';
+  const traffic = L.pods || {}, total = Object.values(traffic).reduce((a, b) => a + b, 0);
+  (C ? C.pods : []).forEach(p => {
+    const ok = p.status === 'Running' && p.ready;
+    const label = ok ? 'Ready' : (p.status === 'Running' ? 'Not ready' : p.status);
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td class="mono">${p.name}</td><td><span class="pill ${ok ? 'ok' : 'warn'}">${label}</span></td><td>${p.cpu_m == null ? '-' : Math.round(p.cpu_m) + 'm'}</td><td>${total ? Math.round(100 * (traffic[p.name] || 0) / total) : 0}%</td>`;
+    tb.appendChild(tr);
+  });
+  $('podsEmpty').textContent = C && !C.pods.length ? 'No pods found for this label.' : '';
+
+  const ul = $('events'); ul.innerHTML = '';
+  const evs = eventsFrom(h);
+  if (!evs.length) ul.innerHTML = '<li class="hint">No changes yet. Start a load to see replicas change.</li>';
+  evs.forEach(x => {
+    const li = document.createElement('li'); li.className = x.k;
+    li.innerHTML = `<span class="tm">${new Date(x.t * 1000).toLocaleTimeString([], {hour12: false})}</span>${x.m}`;
+    ul.appendChild(li);
+  });
+}
+
+async function refresh() {
+  try { render(await api('/api/status')); }
+  catch (e) { $('badge').textContent = 'Disconnected'; $('badge').className = 'badge'; }
+}
+window.addEventListener('resize', () => { if (data) render(data); });
+refresh(); setInterval(refresh, 2000);
+</script>
+</body>
+</html>

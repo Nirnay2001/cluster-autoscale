@@ -1,0 +1,70 @@
+# The dashboard + load generator. Read-only access to pods, HPA and pod metrics.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: autoscale-tester
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: autoscale-tester-read
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list"]
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: autoscale-tester-read
+subjects:
+  - kind: ServiceAccount
+    name: autoscale-tester
+roleRef:
+  kind: Role
+  name: autoscale-tester-read
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: autoscale-tester
+spec:
+  replicas: 1          # keep at 1: load generator state is in memory
+  selector:
+    matchLabels: {app: autoscale-tester}
+  template:
+    metadata:
+      labels: {app: autoscale-tester}
+    spec:
+      serviceAccountName: autoscale-tester
+      containers:
+        - name: app
+          image: autoscale-tester:1.0
+          imagePullPolicy: IfNotPresent
+          ports: [{containerPort: 8080}]
+          env:
+            - {name: TARGET_URL, value: "http://hpa-demo"}
+            - {name: HPA_NAME,   value: "hpa-demo"}
+            - {name: POD_LABEL,  value: "app=hpa-demo"}
+            - name: NAMESPACE
+              valueFrom: {fieldRef: {fieldPath: metadata.namespace}}
+          resources:
+            requests: {cpu: 100m, memory: 96Mi}
+            limits:   {cpu: 500m, memory: 256Mi}
+          readinessProbe:
+            httpGet: {path: /healthz, port: 8080}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: autoscale-tester
+spec:
+  selector: {app: autoscale-tester}
+  ports: [{port: 80, targetPort: 8080}]
