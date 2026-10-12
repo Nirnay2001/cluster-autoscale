@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
         - name: tester-container
-          image: tester-image:latest
+          image: tester-image:test
           imagePullPolicy: IfNotPresent
           ports: 
             - containerPort: 8080
