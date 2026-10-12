@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
         - name: tester-container
-          image: tester-image:test
+          image: nirnay2001/autoscale:test
           imagePullPolicy: IfNotPresent
           ports: 
             - containerPort: 8080
