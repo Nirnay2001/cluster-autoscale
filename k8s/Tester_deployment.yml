@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tester-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels: 
+      app: tester-app
+  template:
+    metadata:
+      labels: 
+        app: tester-app
+    spec:
+      containers:
+        - name: tester-container
+          image: tester-image:latest
+          imagePullPolicy: IfNotPresent
+          ports: 
+            - containerPort: 8080
+          resources:
+            requests: 
+              cpu: 100m
+              memory: 64Mi
+            limits:   
+              cpu: 200m
+              memory: 128Mi
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8080
